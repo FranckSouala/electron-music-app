@@ -46,7 +46,7 @@ function deletePlaylist(id) {
 </script>
 
 <template>
-  <aside class="w-64 bg-darker flex flex-col h-full border-r border-white/5">
+  <aside class="w-64 flex-shrink-0 bg-darker flex flex-col h-full border-r border-white/5">
     <div class="p-6">
       <h1 class="text-2xl font-bold text-primary tracking-tight flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">

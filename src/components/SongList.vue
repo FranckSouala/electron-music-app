@@ -3,7 +3,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { usePlaylistStore } from '@/stores/playlists'
 import { useStatsStore } from '@/stores/stats'
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
@@ -22,44 +22,91 @@ const selectedSongForMenu = ref(null)
 const selectedCategory = ref(null) // null = all songs
 const recentlyAddedPeriod = ref(7 * 24 * 60 * 60 * 1000) // 1 week in ms
 
+// Sorting
+const sortBy = ref(null) // 'title', 'playCount', 'addedAt', 'duration'
+const sortOrder = ref('desc') // 'asc', 'desc'
+const showSortMenu = ref(false)
+
+function setSort(field) {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = field
+    sortOrder.value = 'desc'
+  }
+  // Keep menu open for easier toggling
+}
+
 const songs = computed(() => {
   let baseSongs = libraryStore.songs
   
+  // Attach stats to all songs for easier sorting/filtering
+  baseSongs = baseSongs.map(s => ({ ...s, stats: statsStore.getSongStats(s.id) }))
+
   // Apply category filter
   if (selectedCategory.value) {
     const now = Date.now()
     
     if (selectedCategory.value === 'recently-played') {
-      // Songs with last played, sorted by most recent
       baseSongs = baseSongs
-        .map(s => ({ ...s, stats: statsStore.getSongStats(s.id) }))
         .filter(s => s.stats.lastPlayed)
         .sort((a, b) => b.stats.lastPlayed - a.stats.lastPlayed)
-        .slice(0, 20) // Limit to 20
+        .slice(0, 20)
     } else if (selectedCategory.value === 'recently-added') {
-      // Songs added within the period
       baseSongs = baseSongs
-        .map(s => ({ ...s, stats: statsStore.getSongStats(s.id) }))
         .filter(s => (now - s.stats.addedAt) < recentlyAddedPeriod.value)
         .sort((a, b) => b.stats.addedAt - a.stats.addedAt)
     } else if (selectedCategory.value === 'most-played') {
-      // Songs sorted by play count
       baseSongs = baseSongs
-        .map(s => ({ ...s, stats: statsStore.getSongStats(s.id) }))
         .filter(s => s.stats.playCount > 0)
         .sort((a, b) => b.stats.playCount - a.stats.playCount)
-        .slice(0, 20) // Limit to 20
+        .slice(0, 20)
     }
   }
   
   // Apply search filter
-  if (!searchQuery.value) return baseSongs
-  const query = searchQuery.value.toLowerCase()
-  return baseSongs.filter(s => 
-    s.title.toLowerCase().includes(query) || 
-    s.artist.toLowerCase().includes(query) ||
-    s.album.toLowerCase().includes(query)
-  )
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    baseSongs = baseSongs.filter(s => 
+      s.title.toLowerCase().includes(query) || 
+      s.artist.toLowerCase().includes(query) ||
+      s.album.toLowerCase().includes(query)
+    )
+  }
+
+  // Apply User Sort (overrides category sort if active)
+  if (sortBy.value) {
+    baseSongs.sort((a, b) => {
+      let valA, valB
+      
+      switch (sortBy.value) {
+        case 'title':
+          valA = a.title.toLowerCase()
+          valB = b.title.toLowerCase()
+          break
+        case 'playCount':
+          valA = a.stats.playCount
+          valB = b.stats.playCount
+          break
+        case 'addedAt':
+          valA = a.stats.addedAt
+          valB = b.stats.addedAt
+          break
+        case 'duration':
+          valA = a.duration || 0
+          valB = b.duration || 0
+          break
+        default:
+          return 0
+      }
+
+      if (valA < valB) return sortOrder.value === 'asc' ? -1 : 1
+      if (valA > valB) return sortOrder.value === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
+  return baseSongs
 })
 
 const categories = [
@@ -84,24 +131,24 @@ const categories = [
 
 function selectCategory(categoryId) {
   selectedCategory.value = selectedCategory.value === categoryId ? null : categoryId
+  sortBy.value = null 
 }
 
 function toggleSearch() {
   showSearch.value = !showSearch.value
-  if (showSearch.value) {
-    // Focus logic could go here
-  } else {
+  if (!showSearch.value) {
     searchQuery.value = ''
   }
+}
+
+function toggleSortMenu() {
+  showSortMenu.value = !showSortMenu.value
 }
 
 function shufflePlay() {
   if (songs.value.length > 0) {
     const randomIndex = Math.floor(Math.random() * songs.value.length)
     playerStore.isShuffle = true
-    // Use playContext for shuffle play too? 
-    // If we just play(song), the queue might not be set correctly if we want to shuffle the whole library.
-    // Let's set the queue to the whole library (filtered).
     playerStore.playContext(songs.value, randomIndex)
   }
 }
@@ -130,6 +177,39 @@ async function loadCover(song) {
   }
 }
 
+const isProcessingCovers = ref(false)
+
+async function processCoverQueue() {
+  if (isProcessingCovers.value) return
+  isProcessingCovers.value = true
+  
+  try {
+    // Loop until all songs in the current view have covers
+    while(true) {
+      // Get songs that don't have a cover yet
+      const songsNeedingCover = songs.value.filter(s => covers.value[s.id] === undefined)
+      
+      if (songsNeedingCover.length === 0) break
+      
+      // Take a batch of 10
+      const batch = songsNeedingCover.slice(0, 10)
+      
+      // Load them in parallel
+      await Promise.all(batch.map(s => loadCover(s)))
+      
+      // Small pause to avoid freezing UI
+      await new Promise(r => setTimeout(r, 100))
+    }
+  } finally {
+    isProcessingCovers.value = false
+  }
+}
+
+// Watch for changes in the song list (filtering, sorting, etc.)
+watch(songs, () => {
+  processCoverQueue()
+}, { immediate: true })
+
 function openContextMenu(e, song) {
   e.preventDefault()
   selectedSongForMenu.value = song
@@ -142,6 +222,10 @@ function closeContextMenu() {
   showContextMenu.value = false
 }
 
+function closeSortMenu() {
+  showSortMenu.value = false
+}
+
 function addToPlaylist(playlistId) {
   if (selectedSongForMenu.value) {
     playlistStore.addSongToPlaylist(playlistId, selectedSongForMenu.value)
@@ -150,25 +234,48 @@ function addToPlaylist(playlistId) {
 }
 
 function playSong(song) {
-  // When playing from library, set queue to all library songs
   playerStore.playContext(songs.value, songs.value.findIndex(s => s.id === song.id))
 }
 
-// Close context menu on click outside
+function formatDuration(seconds) {
+  if (!seconds) return '--:--'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return '-'
+  return new Date(timestamp).toLocaleDateString()
+}
+
+// Close menus on click outside
+function handleClickOutside(e) {
+  closeContextMenu()
+  // Close sort menu if clicking outside the sort button and menu
+  if (!e.target.closest('.sort-container')) {
+    closeSortMenu()
+  }
+}
+
 onMounted(() => {
-  window.addEventListener('click', closeContextMenu)
+  window.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleClickOutside)
 })
 </script>
 
 <template>
-  <div class="p-8 overflow-y-auto h-full pb-32">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h2 class="text-3xl font-bold">Local Library</h2>
+  <div class="p-6 overflow-y-auto h-full pb-32">
+    <div class="flex items-center justify-between mb-6 gap-4">
+      <div class="min-w-0">
+        <h2 class="text-2xl font-bold truncate">Local Library</h2>
         <p class="text-gray-400 text-sm mt-1">{{ songs.length }} songs</p>
       </div>
       
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-3 flex-shrink-0">
         <Transition
           enter-active-class="transition duration-200 ease-out"
           enter-from-class="transform opacity-0 translate-x-4"
@@ -181,8 +288,8 @@ onMounted(() => {
             v-if="showSearch"
             v-model="searchQuery"
             type="text" 
-            placeholder="Search songs..." 
-            class="bg-surface border border-white/10 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:border-primary w-64"
+            placeholder="Search..." 
+            class="bg-surface border border-white/10 rounded-full px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary w-32 md:w-48"
             autofocus
           />
         </Transition>
@@ -192,25 +299,75 @@ onMounted(() => {
           class="p-2 text-gray-400 hover:text-white hover:bg-surface rounded-full transition-colors"
           :class="{'text-primary bg-surface': showSearch}"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </button>
+        
+        <!-- Sort Menu -->
+        <div class="relative sort-container">
+          <button 
+            @click="toggleSortMenu"
+            class="p-2 text-gray-400 hover:text-white hover:bg-surface rounded-full transition-colors"
+            :class="{'text-primary bg-surface': showSortMenu}"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+          </button>
+          
+          <div 
+            v-if="showSortMenu"
+            class="absolute right-0 mt-2 w-48 bg-surface border border-white/10 rounded-lg shadow-xl py-1 z-50"
+          >
+            <div class="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5 mb-1">
+              Sort By
+            </div>
+            <button @click.stop="setSort('title')" class="w-full text-left px-4 py-2 text-sm text-white hover:bg-primary/20 hover:text-primary flex justify-between items-center group">
+              Title 
+              <span v-if="sortBy === 'title'" class="text-primary">
+                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </span>
+            </button>
+            <button @click.stop="setSort('playCount')" class="w-full text-left px-4 py-2 text-sm text-white hover:bg-primary/20 hover:text-primary flex justify-between items-center group">
+              Most Played 
+              <span v-if="sortBy === 'playCount'" class="text-primary">
+                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </span>
+            </button>
+            <button @click.stop="setSort('addedAt')" class="w-full text-left px-4 py-2 text-sm text-white hover:bg-primary/20 hover:text-primary flex justify-between items-center group">
+              Recently Added 
+              <span v-if="sortBy === 'addedAt'" class="text-primary">
+                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </span>
+            </button>
+            <button @click.stop="setSort('duration')" class="w-full text-left px-4 py-2 text-sm text-white hover:bg-primary/20 hover:text-primary flex justify-between items-center group">
+              Duration 
+              <span v-if="sortBy === 'duration'" class="text-primary">
+                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </span>
+            </button>
+          </div>
+        </div>
 
         <button 
           @click="shufflePlay"
-          class="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
+          class="bg-primary hover:bg-orange-600 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-transform hover:scale-105 whitespace-nowrap"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
           </svg>
-          Shuffle Play
+          Shuffle
         </button>
       </div>
     </div>
     
     <!-- Categories Slider -->
-    <div class="mb-8">      
+    <div class="mb-6">      
       <div class="overflow-x-auto hide-scrollbar">
         <div class="flex gap-4 pb-2">
           <div 
@@ -220,7 +377,7 @@ onMounted(() => {
             class="flex-shrink-0 cursor-pointer group"
           >
             <div 
-              class="w-[220px] h-[220px] rounded-2xl overflow-hidden mb-3 transition-all shadow-lg hover:shadow-xl"
+              class="w-[200px] h-[200px] rounded-2xl overflow-hidden mb-2 transition-all shadow-lg hover:shadow-xl"
               :class="selectedCategory === category.id ? 'ring-2 ring-white/20' : ''"
             >
               <div class="w-full h-full bg-gradient-to-br flex items-center justify-center"
@@ -231,7 +388,7 @@ onMounted(() => {
                   'from-orange-500 to-red-500': category.id === 'most-played',
                 }"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path v-if="category.id === null" stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   <path v-else-if="category.id === 'recently-played'" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   <path v-else-if="category.id === 'recently-added'" stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -239,10 +396,10 @@ onMounted(() => {
                 </svg>
               </div>
             </div>
-            <div class="text-base font-semibold text-white" :class="{ 'text-primary': selectedCategory === category.id }">
+            <div class="text-sm font-semibold text-white" :class="{ 'text-primary': selectedCategory === category.id }">
               {{ category.label }}
             </div>
-            <div class="text-sm text-gray-400">{{ category.count.value }} songs</div>
+            <div class="text-xs text-gray-400">{{ category.count.value }} songs</div>
           </div>
         </div>
       </div>
@@ -254,40 +411,66 @@ onMounted(() => {
       <p v-else>Try reloading or selecting a different folder.</p>
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-      <div 
-        v-for="song in songs" 
-        :key="song.id"
-        class="group relative bg-surface hover:bg-surface-hover rounded-xl p-4 transition-all cursor-pointer"
-        @click="playSong(song)"
-        @contextmenu="openContextMenu($event, song)"
-        @mouseenter="loadCover(song)" 
-      >
-        <div class="aspect-square bg-darker rounded-lg mb-4 overflow-hidden relative shadow-lg">
-          <img 
-            v-if="covers[song.id]" 
-            :src="covers[song.id]" 
-            class="w-full h-full object-cover transition-transform group-hover:scale-110"
-            loading="lazy"
-          />
-          <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-            </svg>
+    <!-- Song List Table -->
+    <div v-else class="w-full">
+      <!-- Header -->
+      <div class="flex items-center text-gray-400 text-xs uppercase tracking-wider font-bold border-b border-white/10 pb-2 mb-2 px-2">
+        <div class="w-10 text-center flex-shrink-0">#</div>
+        <div class="w-1/3 min-w-0 pr-4">Title</div>
+        <div class="flex-1 min-w-0 pr-4 hidden md:block">Album</div>
+        <div class="flex-1 min-w-0 pr-4 hidden lg:block">Artist</div>
+        <div class="w-32 text-center flex-shrink-0">Times Played</div>
+        <div class="w-20 text-center flex-shrink-0">Duration</div>
+      </div>
+
+      <!-- Rows -->
+      <div class="flex flex-col">
+        <div 
+          v-for="(song, index) in songs" 
+          :key="song.id"
+          class="flex items-center text-sm text-gray-300 hover:bg-white/5 rounded-lg py-1.5 px-2 cursor-pointer group transition-colors"
+          @click="playSong(song)"
+          @contextmenu="openContextMenu($event, song)"
+        >
+          <!-- Index / Play Icon -->
+          <div class="w-10 text-center text-gray-500 group-hover:text-white relative flex-shrink-0">
+            <span class="group-hover:hidden">{{ index + 1 }}</span>
+            <span class="hidden group-hover:block text-primary">▶</span>
           </div>
-          
-          <!-- Play overlay -->
-          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <div class="bg-primary rounded-full p-3 shadow-xl transform scale-0 group-hover:scale-100 transition-transform">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
-              </svg>
+
+          <!-- Title & Cover -->
+          <div class="w-1/3 min-w-0 flex items-center gap-3 pr-4">
+            <div class="w-9 h-9 rounded overflow-hidden bg-darker flex-shrink-0">
+              <img 
+                v-if="covers[song.id]" 
+                :src="covers[song.id]" 
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center bg-gray-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex flex-col overflow-hidden">
+              <span class="font-medium text-white truncate">{{ song.title }}</span>
+              <span class="text-xs text-gray-400 truncate md:hidden">{{ song.artist }}</span>
             </div>
           </div>
+
+          <!-- Album -->
+          <div class="flex-1 min-w-0 truncate text-gray-400 pr-4 hidden md:block">{{ song.album }}</div>
+
+          <!-- Artist -->
+          <div class="flex-1 min-w-0 truncate text-gray-400 pr-4 hidden lg:block">{{ song.artist }}</div>
+
+          <!-- Play Count -->
+          <div class="w-32 text-center text-gray-400 font-mono flex-shrink-0">{{ song.stats.playCount.toLocaleString() }}</div>
+
+          <!-- Duration -->
+          <div class="w-20 text-center text-gray-400 font-mono text-xs flex-shrink-0">{{ formatDuration(song.duration) }}</div>
         </div>
-        
-        <h3 class="font-bold text-white truncate mb-1">{{ song.title }}</h3>
-        <p class="text-sm text-gray-400 truncate">{{ song.artist }}</p>
       </div>
     </div>
 

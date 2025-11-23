@@ -15,6 +15,9 @@ export const usePlayerStore = defineStore('player', () => {
     const loopMode = ref(0) // 0: Off, 1: All, 2: One
     const queue = ref([]) // Current playback queue
 
+    const volume = ref(parseFloat(localStorage.getItem('player-volume')) || 1.0)
+    audio.volume = volume.value
+
     // Sync volume/etc if needed
 
     audio.addEventListener('timeupdate', () => {
@@ -128,6 +131,12 @@ export const usePlayerStore = defineStore('player', () => {
         audio.currentTime = time
     }
 
+    function setVolume(val) {
+        volume.value = val
+        audio.volume = val
+        localStorage.setItem('player-volume', val)
+    }
+
     function toggleShuffle() {
         isShuffle.value = !isShuffle.value
     }
@@ -144,13 +153,16 @@ export const usePlayerStore = defineStore('player', () => {
         isShuffle,
         loopMode,
         queue,
+        volume,
         play,
         playContext,
         togglePlay,
         next,
         prev,
         seek,
+        setVolume,
         toggleShuffle,
         toggleLoop
     }
 })
+

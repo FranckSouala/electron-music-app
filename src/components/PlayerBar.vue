@@ -17,6 +17,13 @@ function handleSeek(e) {
   playerStore.seek(e.target.value)
 }
 
+function getProgressStyle(current, max) {
+  const percent = max > 0 ? (current / max) * 100 : 0
+  return {
+    background: `linear-gradient(to right, #f97316 0%, #f97316 ${percent}%, #374151 ${percent}%, #374151 100%)`
+  }
+}
+
 // Load cover when song changes
 watch(currentSong, async (song) => {
   if (!song) {
@@ -48,10 +55,10 @@ watch(currentSong, async (song) => {
 </script>
 
 <template>
-  <div class="h-24 bg-surface border-t border-white/5 px-6 flex items-center justify-between z-40">
+  <div class="h-24 bg-surface border-t border-white/5 px-6 flex items-center justify-between z-40 flex-shrink-0 min-w-[800px]">
     <!-- Song Info -->
     <div class="flex items-center gap-4 w-1/3">
-      <div v-if="currentSong" class="w-14 h-14 bg-darker rounded-lg overflow-hidden">
+      <div v-if="currentSong" class="w-14 h-14 bg-darker rounded-lg overflow-hidden flex-shrink-0">
          <img v-if="currentCover" :src="currentCover" class="w-full h-full object-cover" />
          <div v-else class="w-full h-full flex items-center justify-center bg-gray-800">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -66,7 +73,7 @@ watch(currentSong, async (song) => {
     </div>
 
     <!-- Controls -->
-    <div class="flex flex-col items-center w-1/3 gap-2">
+    <div class="flex flex-col items-center w-1/3 gap-2 relative left-[60px]">
       <div class="flex items-center gap-6">
         <button 
           class="text-gray-400 hover:text-white transition-colors" 
@@ -92,7 +99,6 @@ watch(currentSong, async (song) => {
           <svg v-if="playerStore.isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
             <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
           </svg>
-          <!-- Removed pl-1 to center properly, depends on the path but standard material icons are usually centered -->
           <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z"/>
           </svg>
@@ -125,15 +131,61 @@ watch(currentSong, async (song) => {
           :max="playerStore.duration || 100" 
           :value="playerStore.currentTime"
           @input="handleSeek"
-          class="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary hover:accent-orange-400"
+          class="flex-1 h-1 rounded-lg appearance-none cursor-pointer range-slider"
+          :style="getProgressStyle(playerStore.currentTime, playerStore.duration || 100)"
         >
         <span>{{ formatTime(playerStore.duration) }}</span>
       </div>
     </div>
 
     <!-- Volume / Extra -->
-    <div class="w-1/3 flex justify-end">
-      <!-- Volume control placeholder -->
+    <div class="w-1/3 flex justify-center relative left-[60px]">
+      <div class="flex items-center gap-2 w-32">
+        <button @click="playerStore.setVolume(playerStore.volume === 0 ? 1 : 0)" class="text-gray-400 hover:text-white">
+          <svg v-if="playerStore.volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+          <svg v-else-if="playerStore.volume < 0.5" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+        </button>
+        <input 
+          type="range" 
+          min="0" 
+          max="1" 
+          step="0.01"
+          :value="playerStore.volume"
+          @input="e => playerStore.setVolume(parseFloat(e.target.value))"
+          class="flex-1 h-1 rounded-lg appearance-none cursor-pointer range-slider"
+          :style="getProgressStyle(playerStore.volume, 1)"
+        >
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.range-slider {
+  -webkit-appearance: none;
+  /* background is handled by inline style */
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 0px;
+  width: 0px;
+}
+
+.range-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: transparent; /* Background handled by input */
+  border-radius: 2px;
+}
+</style>

@@ -28,7 +28,7 @@ onMounted(async () => {
   <div class="flex flex-col h-screen bg-dark text-white font-sans overflow-hidden">
     <div class="flex flex-1 overflow-hidden">
       <Sidebar />
-      <main class="flex-1 relative bg-darker">
+      <main class="flex-1 relative bg-darker min-w-0">
         <SongList v-if="navigationStore.currentView === 'library'" />
         <PlaylistView v-else-if="navigationStore.currentView === 'playlist'" />
       </main>
