@@ -16,9 +16,11 @@ const statsStore = useStatsStore()
 const navigationStore = useNavigationStore()
 
 onMounted(async () => {
+  // IMPORTANT: Stats must be initialized FIRST before library
+  // Otherwise markSongsAsAdded will overwrite existing stats with zeros
+  await statsStore.initialize()
   await libraryStore.initialize()
   await playlistStore.initialize()
-  await statsStore.initialize()
 })
 </script>
 
