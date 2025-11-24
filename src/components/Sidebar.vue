@@ -12,12 +12,15 @@ const isCreating = ref(false)
 const newPlaylistName = ref('')
 const newPlaylistInput = ref(null)
 
-function startCreating() {
-  isCreating.value = true
-  // Wait for DOM update to focus input
-  setTimeout(() => {
-    newPlaylistInput.value?.focus()
-  }, 0)
+function toggleCreating() {
+  if (isCreating.value) {
+    cancelCreate()
+  } else {
+    isCreating.value = true
+    setTimeout(() => {
+      newPlaylistInput.value?.focus()
+    }, 0)
+  }
 }
 
 function confirmCreate() {
@@ -46,9 +49,9 @@ function deletePlaylist(id) {
 </script>
 
 <template>
-  <aside class="w-64 flex-shrink-0 bg-darker flex flex-col h-full border-r border-white/5">
+  <aside class="w-64 flex-shrink-0 bg-gray-100 flex flex-col h-full border-r border-gray-300">
     <div class="p-6">
-      <h1 class="text-2xl font-bold text-primary tracking-tight flex items-center gap-2">
+      <h1 class="text-2xl font-bold text-blue-500 tracking-tight flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
         </svg>
@@ -56,95 +59,95 @@ function deletePlaylist(id) {
       </h1>
     </div>
 
-    <nav class="px-4 space-y-2">
-      <a 
-        href="#" 
-        @click.prevent="navigationStore.navigateToLibrary()"
-        class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors"
-        :class="navigationStore.currentView === 'library' ? 'bg-surface text-white' : 'text-gray-400 hover:text-white hover:bg-surface/50'"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-        </svg>
-        Library
-      </a>
-    </nav>
-
-    <div class="mt-8 px-6">
+    <div class="mt-2 px-6 flex-1 overflow-hidden flex flex-col">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">Playlists</h3>
         <button 
-          @click="startCreating"
-          class="text-gray-400 hover:text-white transition-colors"
-          title="Create Playlist"
+          @click="toggleCreating"
+          class="w-8 h-8 rounded-lg bg-white shadow-neumorphic hover:shadow-neumorphic-pressed transition-all flex items-center justify-center"
+          :title="isCreating ? 'Cancel' : 'Create Playlist'"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            class="h-4 w-4 text-gray-700 transition-transform duration-300 ease-in-out" 
+            :class="{ 'rotate-45': isCreating }"
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
         </button>
       </div>
       
-      <div class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
-        <!-- New Playlist Input -->
-        <div v-if="isCreating" class="px-2 py-1">
+      <div class="space-y-2 overflow-y-auto flex-1 pr-2">
+        <div v-if="isCreating" class="mb-2 p-3 rounded-xl bg-white shadow-neumorphic">
           <input 
             ref="newPlaylistInput"
-            v-model="newPlaylistName"
+            v-model="newPlaylistName" 
+            type="text" 
+            placeholder="Playlist name"
             @keyup.enter="confirmCreate"
             @keyup.esc="cancelCreate"
-            @blur="cancelCreate"
-            type="text"
-            class="w-full bg-surface border border-primary rounded px-2 py-1 text-sm text-white focus:outline-none"
-            placeholder="Name..."
+            class="w-full bg-gray-100 text-gray-800 border-none outline-none text-sm rounded-lg px-2 py-1"
           />
+          <div class="flex gap-2 mt-2">
+            <button @click="confirmCreate" class="flex-1 text-xs bg-blue-500 text-white py-1 rounded-lg hover:bg-blue-600 transition-colors">Create</button>
+            <button @click="cancelCreate" class="flex-1 text-xs bg-gray-300 text-gray-700 py-1 rounded-lg hover:bg-gray-400 transition-colors">Cancel</button>
+          </div>
         </div>
 
-        <div 
-          v-for="playlist in playlistStore.playlists" 
-          :key="playlist.id"
-          class="group flex items-center justify-between text-sm cursor-pointer py-2 px-2 rounded transition-colors"
-          :class="navigationStore.currentPlaylistId === playlist.id ? 'bg-surface text-white' : 'text-gray-400 hover:text-white hover:bg-surface/50'"
-          @click="navigationStore.navigateToPlaylist(playlist.id)"
-        >
-          <span class="truncate">{{ playlist.name }}</span>
-          <button 
-            @click.stop="deletePlaylist(playlist.id)"
-            class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-500 transition-opacity"
-            title="Delete"
+        <div v-for="playlist in playlistStore.playlists" :key="playlist.id" class="group relative mb-2">
+          <a 
+            href="#" 
+            @click.prevent="navigationStore.navigateToPlaylist(playlist.id)"
+            class="flex items-center justify-between px-4 py-2 rounded-xl transition-all"
+            :class="navigationStore.currentPlaylistId === playlist.id ? 'bg-white shadow-neumorphic text-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <span class="truncate text-sm">{{ playlist.name }}</span>
+            <span class="text-xs text-gray-500">{{ playlist.songs.length }}</span>
+          </a>
+          <button 
+            @click="deletePlaylist(playlist.id)"
+            class="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-lg bg-red-100 hover:bg-red-200 flex items-center justify-center"
+            title="Delete Playlist"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142C18.046 20.181 17.211 21 16.21 21H7.79c-1.001 0-1.836-.819-1.923-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
-        </div>
-        
-        <div v-if="playlistStore.playlists.length === 0" class="text-xs text-gray-600 italic">
-          No playlists yet
         </div>
       </div>
     </div>
 
-    <div class="p-4 border-t border-white/5 space-y-2">
+    <div class="mt-auto p-4 border-t border-gray-300">
       <button 
-        @click="libraryStore.scanLibrary()"
-        class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-surface/50 rounded-lg transition-colors"
-        :disabled="libraryStore.isLoading"
+        @click="libraryStore.selectFolder" 
+        class="w-full px-4 py-2 rounded-xl bg-white shadow-neumorphic hover:shadow-neumorphic-pressed transition-all text-sm font-medium text-gray-700 mb-2"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{'animate-spin': libraryStore.isLoading}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        {{ libraryStore.isLoading ? 'Scanning...' : 'Reload Library' }}
-      </button>
-      
-      <button 
-        @click="libraryStore.selectFolder()"
-        class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-surface/50 rounded-lg transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-        </svg>
         Change Folder
+      </button>
+      <button 
+        @click="libraryStore.scanLibrary" 
+        :disabled="libraryStore.isLoading"
+        class="w-full px-4 py-2 rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+      >
+        {{ libraryStore.isLoading ? 'Loading...' : 'Reload Library' }}
       </button>
     </div>
   </aside>
 </template>
+
+<style scoped>
+.shadow-neumorphic {
+  box-shadow: 
+    6px 6px 12px rgba(163, 177, 198, 0.6),
+    -6px -6px 12px rgba(255, 255, 255, 0.8);
+}
+
+.shadow-neumorphic-pressed {
+  box-shadow: 
+    4px 4px 8px rgba(163, 177, 198, 0.5),
+    -4px -4px 8px rgba(255, 255, 255, 0.7);
+}
+</style>

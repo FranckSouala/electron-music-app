@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { useStatsStore } from './stats'
 
 export const useLibraryStore = defineStore('library', () => {
     const musicFolder = ref(null)
-    const songs = ref([])
+    const songs = shallowRef([])
     const isLoading = ref(false)
     const isInitialized = ref(false)
 

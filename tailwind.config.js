@@ -7,7 +7,7 @@ export default {
     theme: {
         extend: {
             colors: {
-                primary: '#ff4500', // Orange-red like Winamp
+                primary: '#3b82f6', // Blue
                 dark: '#121212',
                 darker: '#0a0a0a',
                 surface: '#1e1e1e',

@@ -57,33 +57,61 @@ function playPlaylist(startIndex = 0) {
     // For this MVP, let's just play the song. The "Next" logic in player.js relies on libraryStore.songs.
     // We need to update player.js to support a "context" (library or playlist).
     
-    // Hack for now: We can't easily switch context without refactoring player.js.
     // Let's just play the song and warn user or (better) refactor player.js quickly.
     // Actually, let's refactor player.js to accept a list of songs context.
     
     playerStore.playContext(songs.value, startIndex)
 }
+
+function shufflePlaylist() {
+    if (songs.value.length > 0) {
+        const randomIndex = Math.floor(Math.random() * songs.value.length)
+        playerStore.isShuffle = true
+        playerStore.playContext(songs.value, randomIndex)
+    }
+}
 </script>
 
 <template>
   <div class="p-8 overflow-y-auto h-full pb-32" v-if="playlist">
+    <button 
+      @click="navigationStore.navigateToLibrary()"
+      class="mb-6 flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+      </svg>
+      Back to Library
+    </button>
+
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-3xl font-bold">{{ playlist.name }}</h2>
-        <p class="text-gray-400 text-sm mt-1">{{ songs.length }} songs</p>
+        <h2 class="text-3xl font-bold text-gray-800">{{ playlist.name }}</h2>
+        <p class="text-gray-600 text-sm mt-1">{{ songs.length }} songs</p>
       </div>
       
-      <button 
-        @click="playPlaylist(0)"
-        class="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
-        v-if="songs.length > 0"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        Play All
-      </button>
+      <div class="flex gap-3" v-if="songs.length > 0">
+        <button 
+          @click="shufflePlaylist"
+          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+          </svg>
+          Shuffle
+        </button>
+        
+        <button 
+          @click="playPlaylist(0)"
+          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Play All
+        </button>
+      </div>
     </div>
 
     <div v-if="songs.length === 0" class="text-center text-gray-500 mt-20">
@@ -95,11 +123,11 @@ function playPlaylist(startIndex = 0) {
         <div 
             v-for="(song, index) in songs" 
             :key="song.id"
-            class="group flex items-center gap-4 p-2 rounded-lg hover:bg-surface/50 transition-colors cursor-pointer"
+            class="group flex items-center gap-4 p-2 rounded-lg hover:bg-white/50 transition-colors cursor-pointer"
             @click="playPlaylist(index)"
             @mouseenter="loadCover(song)"
         >
-            <div class="w-10 h-10 bg-darker rounded overflow-hidden flex-shrink-0">
+            <div class="w-10 h-10 bg-gray-100 rounded overflow-hidden flex-shrink-0">
                 <img v-if="covers[song.id]" :src="covers[song.id]" class="w-full h-full object-cover" />
                 <div v-else class="w-full h-full flex items-center justify-center bg-gray-800">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -109,8 +137,8 @@ function playPlaylist(startIndex = 0) {
             </div>
             
             <div class="flex-1 min-w-0">
-                <h4 class="font-medium text-white truncate">{{ song.title }}</h4>
-                <p class="text-xs text-gray-400 truncate">{{ song.artist }}</p>
+                <h4 class="font-medium text-gray-800 truncate">{{ song.title }}</h4>
+                <p class="text-xs text-gray-600 truncate">{{ song.artist }}</p>
             </div>
             
             <div class="text-sm text-gray-500 font-mono">{{ formatDuration(song.duration) }}</div>

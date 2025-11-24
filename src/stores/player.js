@@ -20,8 +20,13 @@ export const usePlayerStore = defineStore('player', () => {
 
     // Sync volume/etc if needed
 
+    let lastTimeUpdate = 0
     audio.addEventListener('timeupdate', () => {
-        currentTime.value = audio.currentTime
+        const now = Date.now()
+        if (now - lastTimeUpdate > 200) {
+            currentTime.value = audio.currentTime
+            lastTimeUpdate = now
+        }
     })
 
     audio.addEventListener('loadedmetadata', () => {
