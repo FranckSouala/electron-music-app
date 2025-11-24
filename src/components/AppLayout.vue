@@ -33,7 +33,9 @@ onMounted(async () => {
         <PlaylistView v-else-if="navigationStore.currentView === 'playlist'" />
       </main>
     </div>
-    <PlayerBar />
+    <div class="h-24 flex-shrink-0 z-40 relative">
+      <PlayerBar />
+    </div>
     
     <Transition
       enter-active-class="transition duration-300 ease-out"

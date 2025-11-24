@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Store from 'electron-store';
 import fs from 'node:fs';
 import { parseFile } from 'music-metadata';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,8 +81,11 @@ async function scanDirectory(dir) {
             if (['.mp3', '.wav', '.ogg', '.flac'].includes(ext)) {
                 try {
                     const metadata = await parseFile(filePath);
+                    // Generate stable ID based on file path
+                    const id = crypto.createHash('md5').update(filePath).digest('hex');
+
                     results.push({
-                        id: uuidv4(),
+                        id: id,
                         path: filePath,
                         title: metadata.common.title || file,
                         artist: metadata.common.artist || 'Unknown Artist',

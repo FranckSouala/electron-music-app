@@ -23,8 +23,8 @@ const selectedCategory = ref(null) // null = all songs
 const recentlyAddedPeriod = ref(7 * 24 * 60 * 60 * 1000) // 1 week in ms
 
 // Sorting
-const sortBy = ref(null) // 'title', 'playCount', 'addedAt', 'duration'
-const sortOrder = ref('desc') // 'asc', 'desc'
+const sortBy = ref(localStorage.getItem('librarySortBy') || null) // 'title', 'playCount', 'addedAt', 'duration'
+const sortOrder = ref(localStorage.getItem('librarySortOrder') || 'desc') // 'asc', 'desc'
 const showSortMenu = ref(false)
 
 function setSort(field) {
@@ -34,8 +34,52 @@ function setSort(field) {
     sortBy.value = field
     sortOrder.value = 'desc'
   }
-  // Keep menu open for easier toggling
+  // Persist
+  localStorage.setItem('librarySortBy', sortBy.value)
+  localStorage.setItem('librarySortOrder', sortOrder.value)
 }
+
+const sortedAllSongs = computed(() => {
+  let baseSongs = [...libraryStore.songs]
+  
+  // Attach stats if needed for sorting (though we access statsStore directly usually)
+  // But for sorting logic consistency with 'songs' computed:
+  
+  if (sortBy.value) {
+    baseSongs.sort((a, b) => {
+      let valA, valB
+      const statsA = statsStore.getSongStats(a.id)
+      const statsB = statsStore.getSongStats(b.id)
+      
+      switch (sortBy.value) {
+        case 'title':
+          valA = a.title.toLowerCase()
+          valB = b.title.toLowerCase()
+          break
+        case 'playCount':
+          valA = statsA.playCount || 0
+          valB = statsB.playCount || 0
+          break
+        case 'addedAt':
+          valA = statsA.addedAt || 0
+          valB = statsB.addedAt || 0
+          break
+        case 'duration':
+          valA = a.duration || 0
+          valB = b.duration || 0
+          break
+        default:
+          return 0
+      }
+
+      if (valA < valB) return sortOrder.value === 'asc' ? -1 : 1
+      if (valA > valB) return sortOrder.value === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+  
+  return baseSongs
+})
 
 const songs = computed(() => {
   let baseSongs = libraryStore.songs
@@ -109,25 +153,86 @@ const songs = computed(() => {
   return baseSongs
 })
 
-const categories = [
-  { id: null, label: 'All songs', count: computed(() => libraryStore.songs.length) },
+const categories = ref([
+  { id: null, label: 'All songs', count: computed(() => libraryStore.songs.length), cover: null },
   { id: 'recently-played', label: 'Recently played', count: computed(() => {
     return libraryStore.songs
       .map(s => statsStore.getSongStats(s.id))
       .filter(stats => stats.lastPlayed).length
-  })},
+  }), cover: null },
   { id: 'recently-added', label: 'Recently added', count: computed(() => {
     const now = Date.now()
     return libraryStore.songs
       .map(s => statsStore.getSongStats(s.id))
       .filter(stats => (now - stats.addedAt) < recentlyAddedPeriod.value).length
-  })},
+  }), cover: null },
   { id: 'most-played', label: 'Most played', count: computed(() => {
     return libraryStore.songs
       .map(s => statsStore.getSongStats(s.id))
       .filter(stats => stats.playCount > 0).length
-  })},
-]
+  }), cover: null },
+])
+
+async function loadCategoryCover(songs, categoryIndex) {
+  if (!songs.length || !window.electronAPI) {
+    categories.value[categoryIndex].cover = null
+    return
+  }
+  try {
+    const pic = await window.electronAPI.getCoverArt(songs[0].path)
+    if (pic) {
+      const bufferData = pic.data.data || pic.data
+      const base64String = btoa(
+        new Uint8Array(bufferData).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ''
+        )
+      )
+      categories.value[categoryIndex].cover = `data:${pic.format};base64,${base64String}`
+    } else {
+      categories.value[categoryIndex].cover = null
+    }
+  } catch (e) {
+    console.error("Failed to load category cover", e)
+    categories.value[categoryIndex].cover = null
+  }
+}
+
+// Computed lists for cover fetching
+const recentlyPlayedList = computed(() => {
+  return [...libraryStore.songs]
+    .filter(s => statsStore.getSongStats(s.id).lastPlayed)
+    .sort((a, b) => (statsStore.getSongStats(b.id).lastPlayed || 0) - (statsStore.getSongStats(a.id).lastPlayed || 0))
+})
+
+const recentlyAddedList = computed(() => {
+  return [...libraryStore.songs]
+    .sort((a, b) => (statsStore.getSongStats(b.id).addedAt || 0) - (statsStore.getSongStats(a.id).addedAt || 0))
+})
+
+const mostPlayedList = computed(() => {
+  return [...libraryStore.songs]
+    .filter(s => statsStore.getSongStats(s.id).playCount > 0)
+    .sort((a, b) => (statsStore.getSongStats(b.id).playCount || 0) - (statsStore.getSongStats(a.id).playCount || 0))
+})
+
+// Watchers to update covers (debounced to prevent excessive loading)
+const coverUpdateTimeouts = [null, null, null, null]
+
+function scheduleCoverUpdate(songs, categoryIndex) {
+  clearTimeout(coverUpdateTimeouts[categoryIndex])
+  coverUpdateTimeouts[categoryIndex] = setTimeout(() => {
+    loadCategoryCover(songs, categoryIndex)
+  }, 300)
+}
+
+watch(sortedAllSongs, (songs) => {
+  scheduleCoverUpdate(songs, 0) // All songs
+}, { immediate: true })
+
+watch(recentlyPlayedList, (songs) => scheduleCoverUpdate(songs, 1), { immediate: true })
+watch(recentlyAddedList, (songs) => scheduleCoverUpdate(songs, 2), { immediate: true })
+watch(mostPlayedList, (songs) => scheduleCoverUpdate(songs, 3), { immediate: true })
 
 function selectCategory(categoryId) {
   selectedCategory.value = selectedCategory.value === categoryId ? null : categoryId
@@ -191,14 +296,14 @@ async function processCoverQueue() {
       
       if (songsNeedingCover.length === 0) break
       
-      // Take a batch of 10
-      const batch = songsNeedingCover.slice(0, 10)
+      // Take a batch of 5 (reduced from 10 for smoother processing)
+      const batch = songsNeedingCover.slice(0, 5)
       
       // Load them in parallel
       await Promise.all(batch.map(s => loadCover(s)))
       
-      // Small pause to avoid freezing UI
-      await new Promise(r => setTimeout(r, 100))
+      // Longer pause to avoid freezing UI (increased from 100ms)
+      await new Promise(r => setTimeout(r, 150))
     }
   } finally {
     isProcessingCovers.value = false
@@ -377,10 +482,17 @@ onUnmounted(() => {
             class="flex-shrink-0 cursor-pointer group"
           >
             <div 
-              class="w-[200px] h-[200px] rounded-2xl overflow-hidden mb-2 transition-all shadow-lg hover:shadow-xl"
+              class="w-[200px] h-[200px] rounded-2xl overflow-hidden mb-2 transition-all shadow-lg hover:shadow-xl relative"
               :class="selectedCategory === category.id ? 'ring-2 ring-white/20' : ''"
             >
-              <div class="w-full h-full bg-gradient-to-br flex items-center justify-center"
+              <img 
+                v-if="category.cover" 
+                :src="category.cover" 
+                class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+              <div 
+                v-else
+                class="w-full h-full bg-gradient-to-br flex items-center justify-center"
                 :class="{
                   'from-blue-500 to-cyan-500': category.id === null,
                   'from-purple-500 to-pink-500': category.id === 'recently-played',
@@ -395,11 +507,14 @@ onUnmounted(() => {
                   <path v-else stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
+              
+              <!-- Overlay for text readability if image exists -->
+              <div v-if="category.cover" class="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors"></div>
             </div>
             <div class="text-sm font-semibold text-white" :class="{ 'text-primary': selectedCategory === category.id }">
               {{ category.label }}
             </div>
-            <div class="text-xs text-gray-400">{{ category.count.value }} songs</div>
+            <div class="text-xs text-gray-400">{{ category.count }} songs</div>
           </div>
         </div>
       </div>
