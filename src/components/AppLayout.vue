@@ -1,4 +1,5 @@
 <script setup>
+import TitleBar from './TitleBar.vue'
 import Sidebar from './Sidebar.vue'
 import PlayerBar from './PlayerBar.vue'
 import SongList from './SongList.vue'
@@ -29,14 +30,22 @@ onMounted(async () => {
 
 <template>
   <div class="h-screen flex flex-col bg-gray-200 text-white font-sans overflow-hidden">
-    <div class="flex flex-1 overflow-hidden">
+    <!-- Title Bar: 40px fixed height -->
+    <div class="flex-shrink-0">
+      <TitleBar />
+    </div>
+    
+    <!-- Main content area: fills remaining space -->
+    <div class="flex flex-1 overflow-hidden min-h-0">
       <Sidebar />
       <main class="flex-1 relative bg-gray-50 min-w-0">
         <SongList v-if="navigationStore.currentView === 'library'" />
         <PlaylistView v-else-if="navigationStore.currentView === 'playlist'" />
       </main>
     </div>
-    <div class="h-24 flex-shrink-0 z-40 relative">
+    
+    <!-- Player Bar: 96px fixed height -->
+    <div class="h-24 flex-shrink-0">
       <PlayerBar />
     </div>
     

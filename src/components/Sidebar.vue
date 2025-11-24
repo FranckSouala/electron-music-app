@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlists'
 import { useNavigationStore } from '@/stores/navigation'
+import AboutModal from './AboutModal.vue'
 
 const libraryStore = useLibraryStore()
 const playlistStore = usePlaylistStore()
@@ -11,6 +12,7 @@ const navigationStore = useNavigationStore()
 const isCreating = ref(false)
 const newPlaylistName = ref('')
 const newPlaylistInput = ref(null)
+const showAbout = ref(false)
 
 function toggleCreating() {
   if (isCreating.value) {
@@ -50,16 +52,7 @@ function deletePlaylist(id) {
 
 <template>
   <aside class="w-64 flex-shrink-0 bg-gray-100 flex flex-col h-full border-r border-gray-300">
-    <div class="p-6">
-      <h1 class="text-2xl font-bold text-blue-500 tracking-tight flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-        </svg>
-        Music App
-      </h1>
-    </div>
-
-    <div class="mt-2 px-6 flex-1 overflow-hidden flex flex-col">
+    <div class="mt-6 px-6 flex-1 overflow-hidden flex flex-col">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">Playlists</h3>
         <button 
@@ -130,24 +123,24 @@ function deletePlaylist(id) {
       <button 
         @click="libraryStore.scanLibrary" 
         :disabled="libraryStore.isLoading"
-        class="w-full px-4 py-2 rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+        class="w-full px-4 py-2 rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-neumorphic hover:shadow-neumorphic-pressed mb-2"
       >
         {{ libraryStore.isLoading ? 'Loading...' : 'Reload Library' }}
       </button>
+      <button 
+        @click="showAbout = true"
+        class="w-full px-4 py-2 rounded-xl bg-white shadow-neumorphic hover:shadow-neumorphic-pressed transition-all text-sm font-medium text-gray-700 flex items-center justify-center gap-2"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        About
+      </button>
     </div>
+    
+    <AboutModal :show="showAbout" @close="showAbout = false" />
   </aside>
 </template>
 
 <style scoped>
-.shadow-neumorphic {
-  box-shadow: 
-    6px 6px 12px rgba(163, 177, 198, 0.6),
-    -6px -6px 12px rgba(255, 255, 255, 0.8);
-}
-
-.shadow-neumorphic-pressed {
-  box-shadow: 
-    4px 4px 8px rgba(163, 177, 198, 0.5),
-    -4px -4px 8px rgba(255, 255, 255, 0.7);
-}
 </style>

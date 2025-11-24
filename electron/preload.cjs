@@ -9,4 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     savePlaylists: (playlists) => ipcRenderer.invoke('save-playlists', playlists),
     getStats: () => ipcRenderer.invoke('get-stats'),
     saveStats: (stats) => ipcRenderer.invoke('save-stats', stats),
+    getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
+    updateTitle: (title) => ipcRenderer.invoke('update-title', title),
+    windowMinimize: () => ipcRenderer.invoke('window-minimize'),
+    windowMaximize: () => ipcRenderer.invoke('window-maximize'),
+    windowClose: () => ipcRenderer.invoke('window-close'),
 });

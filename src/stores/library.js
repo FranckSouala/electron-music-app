@@ -12,7 +12,8 @@ export const useLibraryStore = defineStore('library', () => {
         if (window.electronAPI) {
             const state = await window.electronAPI.getInitialState()
             musicFolder.value = state.musicFolder
-            songs.value = state.library || []
+            // Freeze song objects to prevent deep reactivity overhead
+            songs.value = (state.library || []).map(song => Object.freeze(song))
             isInitialized.value = true
 
             // Mark all existing songs as added if not already tracked
@@ -40,7 +41,8 @@ export const useLibraryStore = defineStore('library', () => {
         isLoading.value = true
         try {
             const scannedSongs = await window.electronAPI.scanLibrary(musicFolder.value)
-            songs.value = scannedSongs
+            // Freeze song objects to prevent deep reactivity overhead
+            songs.value = scannedSongs.map(song => Object.freeze(song))
 
             // Mark new songs as added
             const statsStore = useStatsStore()

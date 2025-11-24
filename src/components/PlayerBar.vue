@@ -2,17 +2,21 @@
 import { usePlayerStore } from '@/stores/player'
 import { useLibraryStore } from '@/stores/library'
 import { useStatsStore } from '@/stores/stats'
+import { usePlaylistStore } from '@/stores/playlists'
 import { computed, ref, watch } from 'vue'
 
 const playerStore = usePlayerStore()
 const libraryStore = useLibraryStore()
 const statsStore = useStatsStore()
+const playlistStore = usePlaylistStore()
 
 const currentSong = computed(() => playerStore.currentSong)
 const currentCover = ref(null)
 const isExpanded = ref(false)
 const showSearch = ref(false)
 const searchQuery = ref('')
+const showPlaylistMenu = ref(false)
+const selectedPlaylistId = ref(localStorage.getItem('selectedPlaylistId') || 'most-played')
 
 // Progressive loading
 const visibleSongCount = ref(10) // Start with 10 songs
@@ -101,6 +105,41 @@ const mostPlayedSongs = computed(() => {
     .sort((a, b) => (statsStore.getSongStats(b.id).playCount || 0) - (statsStore.getSongStats(a.id).playCount || 0))
     .slice(0, 50)
 })
+
+// Selected Playlist Data (dynamic based on user choice)
+const selectedPlaylist = computed(() => {
+  if (selectedPlaylistId.value === 'most-played') {
+    return {
+      id: 'most-played',
+      name: 'Most Played',
+      songs: mostPlayedSongs.value
+    }
+  }
+  return playlistStore.playlists.find(p => p.id === selectedPlaylistId.value) || {
+    id: 'most-played',
+    name: 'Most Played',
+    songs: mostPlayedSongs.value
+  }
+})
+
+const selectedPlaylistCover = ref(null)
+
+// Functions for menu
+function selectPlaylist(playlistId) {
+  selectedPlaylistId.value = playlistId
+  localStorage.setItem('selectedPlaylistId', playlistId)
+  showPlaylistMenu.value = false
+  
+  // Auto-play the selected playlist
+  const playlist = selectedPlaylist.value
+  if (playlist && playlist.songs.length > 0) {
+    playSmartPlaylist(playlist.songs)
+  }
+}
+
+function togglePlaylistMenu() {
+  showPlaylistMenu.value = !showPlaylistMenu.value
+}
 
 // Search Results
 const searchResults = computed(() => {
@@ -278,6 +317,7 @@ watch(allSongs, (songs) => schedulePlaylistCoverUpdate(songs, allSongsCover), { 
 watch(recentlyPlayedSongs, (songs) => schedulePlaylistCoverUpdate(songs, recentlyPlayedCover), { immediate: true })
 watch(recentlyAddedSongs, (songs) => schedulePlaylistCoverUpdate(songs, recentlyAddedCover), { immediate: true })
 watch(mostPlayedSongs, (songs) => schedulePlaylistCoverUpdate(songs, mostPlayedCover), { immediate: true })
+watch(() => selectedPlaylist.value.songs, (songs) => schedulePlaylistCoverUpdate(songs, selectedPlaylistCover), { immediate: true })
 
 // Load cover when song changes
 watch(currentSong, async (song) => {
@@ -315,7 +355,7 @@ watch(currentSong, async (song) => {
     style="will-change: height; transform: translateZ(0);"
     :style="{ 
       height: isExpanded ? '100vh' : '6rem',
-      transition: 'height 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+      transition: 'height 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
       background: isExpanded ? '#1a1a1a' : '#e8ecf0',
       boxShadow: isExpanded ? 'none' : '0 -8px 24px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)'
     }"
@@ -359,129 +399,173 @@ watch(currentSong, async (song) => {
       </div>
 
       <!-- Right: Queue & Playlists -->
-      <div class="w-1/2 h-full overflow-y-auto hide-scrollbar pt-20">
+      <div 
+        class="w-1/2 h-full overflow-y-auto hide-scrollbar pt-20 transition-transform duration-[900ms] ease-out"
+        :style="{ transform: showSearch ? 'translateY(-40px)' : 'translateY(0)' }"
+      >
         <!-- Smart Playlists Tiles -->
         <div 
           v-show="!showSearch" 
-          class="transition-all duration-[800ms] ease-out overflow-hidden mb-8"
+          class="transition-all duration-[900ms] ease-out overflow-hidden mb-8"
           :class="!showSearch ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0 mb-0'"
           style="will-change: max-height, opacity, margin"
         >
           <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Quick Access</h3>
           <div class="grid grid-cols-2 gap-4">
-            <!-- Most Played -->
-            <div 
-              @click="playSmartPlaylist(mostPlayedSongs)"
-              class="relative aspect-video rounded-xl overflow-hidden cursor-pointer group hover:scale-[1.02] transition-transform"
-            >
-              <img v-if="mostPlayedCover" :src="mostPlayedCover" class="absolute inset-0 w-full h-full object-cover" />
-              <div v-else class="absolute inset-0 bg-gradient-to-br from-blue-600 to-red-600"></div>
-              <div class="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex flex-col justify-end p-4">
-                <h4 class="text-white font-bold text-lg shadow-lg">Most Played</h4>
-                <p class="text-xs text-gray-300">{{ mostPlayedSongs.length }} songs</p>
+            <!-- Selected Playlist (with menu) -->
+            <div class="relative">
+              <div 
+                @click="playSmartPlaylist(selectedPlaylist.songs)"
+                class="relative aspect-video rounded-xl overflow-hidden cursor-pointer group hover:scale-[1.02] transition-transform"
+              >
+                <img v-if="selectedPlaylistCover" :src="selectedPlaylistCover" class="absolute inset-0 w-full h-full object-cover" />
+                <div v-else class="absolute inset-0 bg-gradient-to-br from-blue-600 to-red-600"></div>
+                <div class="absolute inset-0 bg-transparent group-hover:bg-black/40 transition-colors flex flex-col justify-end p-4">
+                  <h4 class="text-white font-bold text-lg">{{ selectedPlaylist.name }}</h4>
+                  <p class="text-xs text-gray-300">{{ selectedPlaylist.songs.length }} songs</p>
+                </div>
               </div>
-            </div>
-
-            <!-- Recently Played -->
-            <div 
-              @click="playSmartPlaylist(recentlyPlayedSongs)"
-              class="relative aspect-video rounded-xl overflow-hidden cursor-pointer group hover:scale-[1.02] transition-transform"
-            >
-              <img v-if="recentlyPlayedCover" :src="recentlyPlayedCover" class="absolute inset-0 w-full h-full object-cover" />
-              <div v-else class="absolute inset-0 bg-gradient-to-br from-purple-600 to-pink-600"></div>
-              <div class="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex flex-col justify-end p-4">
-                <h4 class="text-white font-bold text-lg shadow-lg">Recently Played</h4>
-                <p class="text-xs text-gray-300">{{ recentlyPlayedSongs.length }} songs</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Header with Search -->
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            {{ showSearch && searchQuery.trim() ? 'Search Results' : 'Up Next' }}
-          </h3>
-          <div class="flex items-center gap-2">
-            <!-- Scroll to Current Button -->
-            <button 
-              v-if="!showSearch"
-              @click="scrollToCurrent"
-              class="text-gray-400 hover:text-blue-400 transition-colors p-1 rounded-full hover:bg-white/5"
-              title="Go to current song"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <circle cx="12" cy="12" r="10" stroke-width="2" />
-                <circle cx="12" cy="12" r="3" stroke-width="2" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2m0 16v2m10-10h-2M4 12H2" />
-              </svg>
-            </button>
-
-            <Transition
-              enter-active-class="transition-all duration-[300ms] ease-out"
-              enter-from-class="opacity-0 w-0"
-              enter-to-class="opacity-100 w-48"
-              leave-active-class="transition-all duration-[300ms] ease-in"
-              leave-from-class="opacity-100 w-48"
-              leave-to-class="opacity-0 w-0"
-            >
-              <input 
-                v-if="showSearch"
-                v-model="searchQuery"
-                type="text" 
-                placeholder="Search library..." 
-                class="bg-white/10 border border-white/20 rounded-full px-4 py-1 text-sm text-white focus:outline-none focus:border-primary"
-                autofocus
-              />
-            </Transition>
-            <button @click="toggleSearch" class="text-gray-400 hover:text-white transition-colors">
-              <svg v-if="!showSearch" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <!-- List (Queue or Search Results) -->
-        <div class="flex flex-col gap-2 transition-all duration-[800ms] ease-out" style="will-change: transform">
-          <div 
-            v-for="(song, index) in (showSearch && searchQuery.trim() ? searchResults : displayQueue)" 
-            :key="song.id"
-            :id="`song-${song.id}`"
-            class="flex items-center gap-4 p-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer group animate-fade-in"
-            :class="{'bg-white/10': currentSong?.id === song.id}"
-            :style="{ animationDelay: `${index * 30}ms` }"
-            @click="() => {
-              playerStore.play(song);
-              if (showSearch) {
-                searchQuery = '';
-                showSearch = false;
-              }
-            }"
-          >
-            <div class="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-gray-800 relative">
-              <img v-if="queueCovers[song.id]" :src="queueCovers[song.id]" class="w-full h-full object-cover" />
-              <div v-else class="w-full h-full flex items-center justify-center text-gray-500 text-xs">♫</div>
               
-              <!-- Wave Animation Overlay -->
-              <div v-if="currentSong?.id == song.id" class="absolute inset-0 bg-black/40 flex items-center justify-center gap-1">
-                <div class="wave-bar h-3" :class="{'animate-none': !playerStore.isPlaying}"></div>
-                <div class="wave-bar h-4" :class="{'animate-none': !playerStore.isPlaying}"></div>
-                <div class="wave-bar h-2" :class="{'animate-none': !playerStore.isPlaying}"></div>
+              <!-- Menu Icon -->
+              <button 
+                @click.stop="togglePlaylistMenu"
+                class="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center transition-colors z-10"
+                title="Choose playlist"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              
+              <!-- Dropdown Menu -->
+              <div 
+                v-if="showPlaylistMenu"
+                class="absolute top-12 right-2 bg-gray-800 rounded-lg shadow-xl p-2 min-w-[200px] max-h-[300px] overflow-y-auto z-20"
+                @click.stop
+              >
+                <button 
+                  @click="selectPlaylist('most-played')"
+                  class="w-full text-left px-3 py-2 rounded hover:bg-gray-700 transition-colors"
+                  :class="selectedPlaylistId === 'most-played' ? 'bg-blue-600 text-white' : 'text-gray-200'"
+                >
+                  Most Played
+                </button>
+                <div v-for="playlist in playlistStore.playlists" :key="playlist.id">
+                  <button 
+                    @click="selectPlaylist(playlist.id)"
+                    class="w-full text-left px-3 py-2 rounded hover:bg-gray-700 transition-colors"
+                    :class="selectedPlaylistId === playlist.id ? 'bg-blue-600 text-white' : 'text-gray-200'"
+                  >
+                    {{ playlist.name }}
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-white truncate" :class="{'text-blue-500': currentSong?.id === song.id}">{{ song.title }}</div>
-              <div class="text-sm text-gray-400 truncate">{{ song.artist }}</div>
+
+            <!-- All Songs -->
+            <div 
+              @click="playSmartPlaylist(allSongs)"
+              class="relative aspect-video rounded-xl overflow-hidden cursor-pointer group hover:scale-[1.02] transition-transform"
+            >
+              <img v-if="allSongsCover" :src="allSongsCover" class="absolute inset-0 w-full h-full object-cover" />
+              <div v-else class="absolute inset-0 bg-gradient-to-br from-purple-600 to-pink-600"></div>
+              <div class="absolute inset-0 bg-transparent group-hover:bg-black/40 transition-colors flex flex-col justify-end p-4">
+                <h4 class="text-white font-bold text-lg">All Songs</h4>
+                <p class="text-xs text-gray-300">{{ allSongs.length }} songs</p>
+              </div>
             </div>
-            <div class="text-sm text-gray-500 font-mono">{{ formatTime(song.duration) }}</div>
           </div>
-          
-          <div v-if="showSearch && searchQuery.trim() && searchResults.length === 0" class="text-center text-gray-500 py-8">
-            No results found
+        </div>
+
+
+        <!-- Header with Search and List Section -->
+        <div>
+          <!-- Header with Search -->
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              {{ showSearch && searchQuery.trim() ? 'Search Results' : 'Up Next' }}
+            </h3>
+            <div class="flex items-center gap-2">
+              <!-- Scroll to Current Button -->
+              <button 
+                v-if="!showSearch"
+                @click="scrollToCurrent"
+                class="text-gray-400 hover:text-blue-400 transition-colors p-1 rounded-full hover:bg-white/5"
+                title="Go to current song"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10" stroke-width="2" />
+                  <circle cx="12" cy="12" r="3" stroke-width="2" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2m0 16v2m10-10h-2M4 12H2" />
+                </svg>
+              </button>
+
+              <Transition
+                enter-active-class="transition-all duration-[800ms] ease-out"
+                enter-from-class="opacity-0 w-0"
+                enter-to-class="opacity-100 w-48"
+                leave-active-class="transition-all duration-[800ms] ease-in"
+                leave-from-class="opacity-100 w-48"
+                leave-to-class="opacity-0 w-0"
+              >
+                <input 
+                  v-if="showSearch"
+                  v-model="searchQuery"
+                  type="text" 
+                  placeholder="Search library..." 
+                  class="bg-white/10 border border-white/20 rounded-full px-4 py-1 text-sm text-white focus:outline-none focus:border-primary"
+                  autofocus
+                />
+              </Transition>
+              <button @click="toggleSearch" class="text-gray-400 hover:text-white transition-colors">
+                <svg v-if="!showSearch" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- List (Queue or Search Results) -->
+          <div class="flex flex-col gap-2" style="will-change: transform">
+            <div 
+              v-for="(song, index) in (showSearch && searchQuery.trim() ? searchResults : displayQueue)" 
+              :key="song.id"
+              :id="`song-${song.id}`"
+              class="flex items-center gap-4 p-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer group animate-fade-in"
+              :class="{'bg-white/10': currentSong?.id === song.id}"
+              :style="{ animationDelay: `${index * 30}ms` }"
+              @click="() => {
+                playerStore.play(song);
+                if (showSearch) {
+                  searchQuery = '';
+                  showSearch = false;
+                }
+              }"
+            >
+              <div class="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-gray-800 relative">
+                <img v-if="queueCovers[song.id]" :src="queueCovers[song.id]" class="w-full h-full object-cover" />
+                <div v-else class="w-full h-full flex items-center justify-center text-gray-500 text-xs">♫</div>
+                
+                <!-- Wave Animation Overlay -->
+                <div v-if="currentSong?.id == song.id" class="absolute inset-0 bg-black/40 flex items-center justify-center gap-1">
+                  <div class="wave-bar h-3" :class="{'paused': !playerStore.isPlaying}"></div>
+                  <div class="wave-bar h-4" :class="{'paused': !playerStore.isPlaying}"></div>
+                  <div class="wave-bar h-2" :class="{'paused': !playerStore.isPlaying}"></div>
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-white truncate" :class="{'text-blue-500': currentSong?.id === song.id}">{{ song.title }}</div>
+                <div class="text-sm text-gray-400 truncate">{{ song.artist }}</div>
+              </div>
+              <div class="text-sm text-gray-500 font-mono">{{ formatTime(song.duration) }}</div>
+            </div>
+            
+            <div v-if="showSearch && searchQuery.trim() && searchResults.length === 0" class="text-center text-gray-500 py-8">
+              No results found
+            </div>
           </div>
         </div>
       </div>
@@ -762,29 +846,6 @@ watch(currentSong, async (song) => {
 </template>
 
 <style scoped>
-/* Neumorphic shadows */
-.shadow-neumorphic {
-  box-shadow: 
-    6px 6px 12px rgba(163, 177, 198, 0.6),
-    -6px -6px 12px rgba(255, 255, 255, 0.8);
-}
-
-.shadow-neumorphic-pressed {
-  box-shadow: 
-    4px 4px 8px rgba(163, 177, 198, 0.5),
-    -4px -4px 8px rgba(255, 255, 255, 0.7);
-}
-
-.shadow-neumorphic-inset {
-  box-shadow: 
-    inset 3px 3px 6px rgba(163, 177, 198, 0.6),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.5);
-}
-
-.shadow-inner-soft {
-  box-shadow: inset 2px 2px 4px rgba(163, 177, 198, 0.4);
-}
-
 /* Range slider */
 .range-slider {
   appearance: none;

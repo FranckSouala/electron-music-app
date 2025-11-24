@@ -23,7 +23,7 @@ function createWindow() {
             webSecurity: false // Allow loading local files
         },
         autoHideMenuBar: true,
-        titleBarStyle: 'hiddenInset',
+        frame: false, // Remove native title bar completely
     });
 
     // In development, load the vite dev server
@@ -66,6 +66,50 @@ ipcMain.handle('get-initial-state', () => {
         library: store.get('library', []),
     };
 });
+
+// Get system theme/platform for window controls
+ipcMain.handle('get-system-theme', () => {
+    if (process.platform === 'darwin') return 'mac';
+    if (process.platform === 'win32') return 'windows';
+
+    // Linux detection
+    const desktopEnv = (process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION || '').toLowerCase();
+    if (desktopEnv.includes('gnome')) return 'gnome';
+    if (desktopEnv.includes('kde') || desktopEnv.includes('plasma')) return 'kde';
+
+    return 'default'; // Fallback for other Linux DEs
+});
+
+// Update window title (for currently playing song)
+ipcMain.handle('update-title', (event, title) => {
+    if (mainWindow) {
+        mainWindow.setTitle(title || 'Low Music');
+    }
+});
+
+// Window controls
+ipcMain.handle('window-minimize', () => {
+    if (mainWindow) {
+        mainWindow.minimize();
+    }
+});
+
+ipcMain.handle('window-maximize', () => {
+    if (mainWindow) {
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow.maximize();
+        }
+    }
+});
+
+ipcMain.handle('window-close', () => {
+    if (mainWindow) {
+        mainWindow.close();
+    }
+});
+
 
 // Recursive file scan
 async function scanDirectory(dir) {

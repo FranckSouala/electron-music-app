@@ -73,7 +73,7 @@ function shufflePlaylist() {
 </script>
 
 <template>
-  <div class="p-8 overflow-y-auto h-full pb-32" v-if="playlist">
+  <div class="p-8 overflow-y-auto h-full pb-8" v-if="playlist">
     <button 
       @click="navigationStore.navigateToLibrary()"
       class="mb-6 flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors"
@@ -93,7 +93,7 @@ function shufflePlaylist() {
       <div class="flex gap-3" v-if="songs.length > 0">
         <button 
           @click="shufflePlaylist"
-          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
+          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-all hover:scale-105 shadow-neumorphic hover:shadow-neumorphic-pressed"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
@@ -103,7 +103,7 @@ function shufflePlaylist() {
         
         <button 
           @click="playPlaylist(0)"
-          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-transform hover:scale-105"
+          class="bg-primary hover:bg-blue-600 text-gray-800 px-4 py-2 rounded-full font-medium flex items-center gap-2 transition-all hover:scale-105 shadow-neumorphic hover:shadow-neumorphic-pressed"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />

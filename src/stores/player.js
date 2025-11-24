@@ -63,6 +63,11 @@ export const usePlayerStore = defineStore('player', () => {
         audio.src = `file://${song.path}`
         audio.play().catch(e => console.error("Play failed:", e))
         isPlaying.value = true
+
+        // Update window title
+        if (window.electronAPI) {
+            window.electronAPI.updateTitle(`${song.title} - ${song.artist}`)
+        }
     }
 
     function playContext(songs, startIndex = 0) {

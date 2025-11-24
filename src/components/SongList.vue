@@ -153,6 +153,56 @@ const songs = computed(() => {
   return baseSongs
 })
 
+// ===== VIRTUAL SCROLLING =====
+const ROW_HEIGHT = 42 // Fixed height per row in pixels
+const BUFFER_SIZE = 10 // Extra rows to render above/below viewport
+const scrollContainer = ref(null)
+const scrollTop = ref(0)
+const containerHeight = ref(600) // Default, will be updated
+
+// Calculate visible range based on scroll position
+const visibleRange = computed(() => {
+  const startIndex = Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - BUFFER_SIZE)
+  const visibleCount = Math.ceil(containerHeight.value / ROW_HEIGHT) + (BUFFER_SIZE * 2)
+  const endIndex = Math.min(songs.value.length, startIndex + visibleCount)
+  
+  return { startIndex, endIndex }
+})
+
+// Only render songs in the visible range
+const visibleSongs = computed(() => {
+  const { startIndex, endIndex } = visibleRange.value
+  return songs.value.slice(startIndex, endIndex).map((song, index) => ({
+    ...song,
+    absoluteIndex: startIndex + index
+  }))
+})
+
+// Total height of all songs for virtual scrolling
+const totalHeight = computed(() => songs.value.length * ROW_HEIGHT)
+
+// Offset for the visible songs container
+const offsetY = computed(() => visibleRange.value.startIndex * ROW_HEIGHT)
+
+// Throttled scroll handler
+let scrollTimeout = null
+function handleScroll(event) {
+  if (scrollTimeout) return
+  
+  scrollTimeout = setTimeout(() => {
+    scrollTop.value = event.target.scrollTop
+    scrollTimeout = null
+  }, 16) // ~60fps
+}
+
+// Update container height on mount and resize
+function updateContainerHeight() {
+  if (scrollContainer.value) {
+    containerHeight.value = scrollContainer.value.clientHeight
+  }
+}
+// ===== END VIRTUAL SCROLLING =====
+
 const categories = ref([
   { id: null, label: 'All songs', count: computed(() => libraryStore.songs.length), cover: null },
   { id: 'recently-played', label: 'Recently played', count: computed(() => {
@@ -310,9 +360,14 @@ async function processCoverQueue() {
   }
 }
 
-// Watch for changes in the song list (filtering, sorting, etc.)
-watch(songs, () => {
-  processCoverQueue()
+// Watch for changes in the visible songs (not all songs) for cover loading
+watch(visibleSongs, (newVisibleSongs) => {
+  // Only load covers for songs that are currently visible
+  newVisibleSongs.forEach(song => {
+    if (covers.value[song.id] === undefined) {
+      loadCover(song)
+    }
+  })
 }, { immediate: true })
 
 function openContextMenu(e, song) {
@@ -364,257 +419,277 @@ function handleClickOutside(e) {
 }
 
 function scrollToCurrent() {
-  if (!playerStore.currentSong) return
+  if (!playerStore.currentSong || !scrollContainer.value) return
   
-  const element = document.getElementById(`main-song-${playerStore.currentSong.id}`)
-  if (element) {
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
+  const currentIndex = songs.value.findIndex(s => s.id === playerStore.currentSong.id)
+  if (currentIndex === -1) return
+  
+  // Calculate the scroll position to center the current song
+  const targetScrollTop = (currentIndex * ROW_HEIGHT) - (containerHeight.value / 2) + (ROW_HEIGHT / 2)
+  scrollContainer.value.scrollTop = Math.max(0, targetScrollTop)
 }
 
 onMounted(() => {
   window.addEventListener('click', handleClickOutside)
+  updateContainerHeight()
+  window.addEventListener('resize', updateContainerHeight)
 })
 
 onUnmounted(() => {
   window.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', updateContainerHeight)
 })
 </script>
 
 <template>
-  <div class="p-6 overflow-y-auto h-full pb-32 text-gray-800">
-    <div class="flex items-center justify-between mb-6 gap-4">
-      <div class="min-w-0 flex items-center gap-3">
-        <div>
-          <h2 class="text-2xl font-bold text-gray-800 truncate">Local Library</h2>
-          <p class="text-gray-600 text-sm mt-1">{{ songs.length }} songs</p>
+  <div class="flex flex-col h-full overflow-hidden bg-gray-50">
+    <!-- Fixed Header Section -->
+    <div class="flex-shrink-0 p-6 pb-0">
+      <div class="flex items-center justify-between mb-6 gap-4">
+        <div class="min-w-0 flex items-center gap-3">
+          <div>
+            <h2 class="text-2xl font-bold text-gray-800 truncate">Local Library</h2>
+            <p class="text-gray-600 text-sm mt-1">{{ songs.length }} songs</p>
+          </div>
         </div>
-      </div>
-      
-      <div class="flex items-center gap-3 flex-shrink-0">
-        <button 
-          @click="scrollToCurrent"
-          class="p-2 text-gray-600 hover:text-blue-500 hover:bg-white rounded-full transition-colors"
-          title="Go to current song"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <circle cx="12" cy="12" r="10" stroke-width="2" />
-            <circle cx="12" cy="12" r="3" stroke-width="2" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2m0 16v2m10-10h-2M4 12H2" />
-          </svg>
-        </button>
-        <Transition
-          enter-active-class="transition duration-200 ease-out"
-          enter-from-class="transform opacity-0 translate-x-4"
-          enter-to-class="transform opacity-100 translate-x-0"
-          leave-active-class="transition duration-150 ease-in"
-          leave-from-class="transform opacity-100 translate-x-0"
-          leave-to-class="transform opacity-0 translate-x-4"
-        >
-          <input 
-            v-if="showSearch"
-            v-model="searchQuery"
-            type="text" 
-            placeholder="Search..." 
-            class="bg-white border border-gray-300 rounded-full px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-primary w-32 md:w-48"
-            autofocus
-          />
-        </Transition>
-
-        <button 
-          @click="toggleSearch"
-          class="p-2 text-gray-600 hover:text-gray-800 hover:bg-white rounded-full transition-colors"
-          :class="{'text-blue-500 bg-white': showSearch}"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-        </button>
         
-        <!-- Sort Menu -->
-        <div class="relative sort-container">
+        <div class="flex items-center gap-3 flex-shrink-0">
           <button 
-            @click="toggleSortMenu"
-            class="p-2 text-gray-600 hover:text-gray-800 hover:bg-white rounded-full transition-colors"
-            :class="{'text-blue-500 bg-white': showSortMenu}"
+            @click="scrollToCurrent"
+            class="p-2 text-gray-600 hover:text-blue-500 hover:bg-white rounded-full transition-colors"
+            title="Go to current song"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              <circle cx="12" cy="12" r="10" stroke-width="2" />
+              <circle cx="12" cy="12" r="3" stroke-width="2" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2m0 16v2m10-10h-2M4 12H2" />
+            </svg>
+          </button>
+          <Transition
+            enter-active-class="transition duration-200 ease-out"
+            enter-from-class="transform opacity-0 translate-x-4"
+            enter-to-class="transform opacity-100 translate-x-0"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="transform opacity-100 translate-x-0"
+            leave-to-class="transform opacity-0 translate-x-4"
+          >
+            <input 
+              v-if="showSearch"
+              v-model="searchQuery"
+              type="text" 
+              placeholder="Search..." 
+              class="bg-white border border-gray-300 rounded-full px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-primary w-32 md:w-48"
+              autofocus
+            />
+          </Transition>
+
+          <button 
+            @click="toggleSearch"
+            class="p-2 text-gray-600 hover:text-gray-800 hover:bg-white rounded-full transition-colors"
+            :class="{'text-blue-500 bg-white': showSearch}"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </button>
           
-          <div 
-            v-if="showSortMenu"
-            class="absolute right-0 mt-2 w-48 bg-white border border-gray-300 rounded-lg shadow-xl py-1 z-50"
-          >
-            <div class="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-300 mb-1">
-              Sort By
-            </div>
-            <button @click.stop="setSort('title')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
-              Title 
-              <span v-if="sortBy === 'title'" class="text-blue-500">
-                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </span>
-            </button>
-            <button @click.stop="setSort('playCount')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
-              Most Played 
-              <span v-if="sortBy === 'playCount'" class="text-blue-500">
-                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </span>
-            </button>
-            <button @click.stop="setSort('addedAt')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
-              Recently Added 
-              <span v-if="sortBy === 'addedAt'" class="text-blue-500">
-                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </span>
-            </button>
-            <button @click.stop="setSort('duration')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
-              Duration 
-              <span v-if="sortBy === 'duration'" class="text-blue-500">
-                <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <button 
-          @click="shufflePlay"
-          class="bg-primary hover:bg-blue-600 text-gray-800 px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-transform hover:scale-105 whitespace-nowrap"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
-          </svg>
-          Shuffle
-        </button>
-      </div>
-    </div>
-    
-    <!-- Categories Slider -->
-    <div class="mb-6">      
-      <div class="overflow-x-auto hide-scrollbar">
-        <div class="flex gap-4 pb-2">
-          <div 
-            v-for="category in categories" 
-            :key="category.id || 'all'"
-            @click="selectCategory(category.id)"
-            class="flex-shrink-0 cursor-pointer group"
-          >
-            <div 
-              class="w-[200px] h-[200px] rounded-2xl overflow-hidden mb-2 transition-all shadow-lg hover:shadow-xl relative"
-              :class="selectedCategory === category.id ? 'ring-2 ring-white/20' : ''"
+          <!-- Sort Menu -->
+          <div class="relative sort-container">
+            <button 
+              @click="toggleSortMenu"
+              class="p-2 text-gray-600 hover:text-gray-800 hover:bg-white rounded-full transition-colors"
+              :class="{'text-blue-500 bg-white': showSortMenu}"
             >
-              <img 
-                v-if="category.cover" 
-                :src="category.cover" 
-                class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-              />
-              <div 
-                v-else
-                class="w-full h-full bg-gradient-to-br flex items-center justify-center"
-                :class="{
-                  'from-blue-500 to-cyan-500': category.id === null,
-                  'from-purple-500 to-pink-500': category.id === 'recently-played',
-                  'from-green-500 to-teal-500': category.id === 'recently-added',
-                  'from-blue-500 to-red-500': category.id === 'most-played',
-                }"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path v-if="category.id === null" stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  <path v-else-if="category.id === 'recently-played'" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  <path v-else-if="category.id === 'recently-added'" stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  <path v-else stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+            
+            <div 
+              v-if="showSortMenu"
+              class="absolute right-0 mt-2 w-48 bg-white border border-gray-300 rounded-lg shadow-xl py-1 z-50"
+            >
+              <div class="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-300 mb-1">
+                Sort By
               </div>
-              
-              <!-- Overlay for text readability if image exists -->
-              <div v-if="category.cover" class="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors"></div>
+              <button @click.stop="setSort('title')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
+                Title 
+                <span v-if="sortBy === 'title'" class="text-blue-500">
+                  <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </span>
+              </button>
+              <button @click.stop="setSort('playCount')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
+                Most Played 
+                <span v-if="sortBy === 'playCount'" class="text-blue-500">
+                  <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </span>
+              </button>
+              <button @click.stop="setSort('addedAt')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
+                Recently Added 
+                <span v-if="sortBy === 'addedAt'" class="text-blue-500">
+                  <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </span>
+              </button>
+              <button @click.stop="setSort('duration')" class="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-primary/20 hover:text-blue-500 flex justify-between items-center group">
+                Duration 
+                <span v-if="sortBy === 'duration'" class="text-blue-500">
+                  <svg v-if="sortOrder === 'asc'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </span>
+              </button>
             </div>
-            <div class="text-sm font-semibold text-gray-800" :class="{ 'text-blue-500': selectedCategory === category.id }">
-              {{ category.label }}
+          </div>
+
+          <button 
+            @click="shufflePlay"
+            class="bg-primary hover:bg-blue-600 text-gray-800 px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap shadow-neumorphic hover:shadow-neumorphic-pressed"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+            </svg>
+            Shuffle
+          </button>
+        </div>
+      </div>
+      
+      <!-- Categories Slider -->
+      <div class="mb-6">      
+        <div class="overflow-x-auto hide-scrollbar">
+          <div class="flex gap-4 pb-2">
+            <div 
+              v-for="category in categories" 
+              :key="category.id || 'all'"
+              @click="selectCategory(category.id)"
+              class="flex-shrink-0 cursor-pointer group"
+            >
+              <div 
+                class="w-[200px] h-[200px] rounded-2xl overflow-hidden mb-2 transition-all shadow-lg hover:shadow-xl relative"
+                :class="selectedCategory === category.id ? 'ring-2 ring-white/20' : ''"
+              >
+                <img 
+                  v-if="category.cover" 
+                  :src="category.cover" 
+                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                />
+                <div 
+                  v-else
+                  class="w-full h-full bg-gradient-to-br flex items-center justify-center"
+                  :class="{
+                    'from-blue-500 to-cyan-500': category.id === null,
+                    'from-purple-500 to-pink-500': category.id === 'recently-played',
+                    'from-green-500 to-teal-500': category.id === 'recently-added',
+                    'from-blue-500 to-red-500': category.id === 'most-played',
+                  }"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path v-if="category.id === null" stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    <path v-else-if="category.id === 'recently-played'" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path v-else-if="category.id === 'recently-added'" stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    <path v-else stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
+              </div>
+              <div class="text-sm font-semibold text-gray-800" :class="{ 'text-blue-500': selectedCategory === category.id }">
+                {{ category.label }}
+              </div>
+              <div class="text-xs text-gray-600">{{ category.count }} songs</div>
             </div>
-            <div class="text-xs text-gray-600">{{ category.count }} songs</div>
           </div>
         </div>
       </div>
     </div>
-    
-    <div v-if="songs.length === 0" class="text-center text-gray-500 mt-20">
-      <p class="text-xl">No songs found.</p>
-      <p v-if="searchQuery">Try a different search term.</p>
-      <p v-else>Try reloading or selecting a different folder.</p>
-    </div>
 
-    <!-- Song List Table -->
-    <div v-else class="w-full">
-      <!-- Header -->
-      <div class="flex items-center text-gray-600 text-xs uppercase tracking-wider font-bold border-b border-gray-300 pb-2 mb-2 px-2">
-        <div class="w-10 text-center flex-shrink-0">#</div>
-        <div class="w-1/3 min-w-0 pr-4">Title</div>
-        <div class="flex-1 min-w-0 pr-4 hidden md:block">Album</div>
-        <div class="flex-1 min-w-0 pr-4 hidden lg:block">Artist</div>
-        <div class="w-32 text-center flex-shrink-0">Times Played</div>
-        <div class="w-20 text-center flex-shrink-0">Duration</div>
+    <!-- Scrollable Content Area -->
+    <div class="flex-1 min-h-0 flex flex-col">
+      <div v-if="songs.length === 0" class="text-center text-gray-500 mt-20">
+        <p class="text-xl">No songs found.</p>
+        <p v-if="searchQuery">Try a different search term.</p>
+        <p v-else>Try reloading or selecting a different folder.</p>
       </div>
 
-      <!-- Rows -->
-      <div class="flex flex-col">
+      <!-- Song List Table -->
+      <div v-else class="flex-1 flex flex-col min-h-0">
+        <!-- Header -->
+        <div class="flex-shrink-0 flex items-center text-gray-600 text-xs uppercase tracking-wider font-bold border-b border-gray-300 pb-2 mb-2 px-8">
+          <div class="w-10 text-center flex-shrink-0">#</div>
+          <div class="w-1/3 min-w-0 pr-4">Title</div>
+          <div class="flex-1 min-w-0 pr-4 hidden md:block">Album</div>
+          <div class="flex-1 min-w-0 pr-4 hidden lg:block">Artist</div>
+          <div class="w-32 text-center flex-shrink-0">Times Played</div>
+          <div class="w-20 text-center flex-shrink-0">Duration</div>
+        </div>
+
+        <!-- Virtual Scroll Container with GPU Acceleration -->
         <div 
-          v-for="(song, index) in songs" 
-          :key="song.id"
-          :id="`main-song-${song.id}`"
-          class="flex items-center text-sm text-gray-700 hover:bg-white/5 rounded-lg py-1.5 px-2 cursor-pointer group transition-colors"
-          @click="playSong(song)"
-          @contextmenu="openContextMenu($event, song)"
+          ref="scrollContainer"
+          @scroll="handleScroll"
+          class="flex-1 overflow-y-auto will-change-transform px-6 pb-8"
+          style="transform: translateZ(0);"
         >
-          <!-- Index / Play Icon -->
-          <div class="w-10 text-center text-gray-500 group-hover:text-gray-800 relative flex-shrink-0">
-            <span class="group-hover:hidden">{{ index + 1 }}</span>
-            <span class="hidden group-hover:block text-blue-500">▶</span>
-          </div>
+          <!-- Virtual spacer for total height -->
+          <div :style="{ height: `${totalHeight}px`, position: 'relative' }">
+            <!-- Visible rows container -->
+            <div :style="{ transform: `translateY(${offsetY}px)` }">
+              <div 
+                v-for="song in visibleSongs" 
+                :key="song.id"
+                :id="`main-song-${song.id}`"
+                class="flex items-center text-sm text-gray-700 hover:bg-white/5 rounded-lg cursor-pointer group transition-colors"
+                :style="{ height: `${ROW_HEIGHT}px`, padding: '0.375rem 0.5rem' }"
+                @click="playSong(song)"
+                @contextmenu="openContextMenu($event, song)"
+              >
+                <!-- Index / Play Icon -->
+                <div class="w-10 text-center text-gray-500 group-hover:text-gray-800 relative flex-shrink-0">
+                  <span class="group-hover:hidden">{{ song.absoluteIndex + 1 }}</span>
+                  <span class="hidden group-hover:block text-blue-500">▶</span>
+                </div>
 
-          <!-- Title & Cover -->
-          <div class="w-1/3 min-w-0 flex items-center gap-3 pr-4">
-            <div class="w-9 h-9 rounded overflow-hidden bg-gray-100 flex-shrink-0 relative">
-              <img 
-                v-if="covers[song.id]" 
-                :src="covers[song.id]" 
-                class="w-full h-full object-cover"
-                loading="lazy"
-              />
-              <div v-else class="w-full h-full flex items-center justify-center bg-gray-800">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
+                <!-- Title & Cover -->
+                <div class="w-1/3 min-w-0 flex items-center gap-3 pr-4">
+                  <div class="w-9 h-9 rounded overflow-hidden bg-gray-100 flex-shrink-0 relative">
+                    <img 
+                      v-if="covers[song.id]" 
+                      :src="covers[song.id]" 
+                      class="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <div v-else class="w-full h-full flex items-center justify-center bg-gray-800">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                    </div>
 
-              <!-- Wave Animation Overlay -->
-              <div v-if="playerStore.currentSong?.id == song.id" class="absolute inset-0 bg-black/40 flex items-center justify-center gap-1 z-10">
-                <div class="wave-bar h-2" :class="{'animate-none': !playerStore.isPlaying}"></div>
-                <div class="wave-bar h-3" :class="{'animate-none': !playerStore.isPlaying}"></div>
-                <div class="wave-bar h-1.5" :class="{'animate-none': !playerStore.isPlaying}"></div>
+                    <!-- Wave Animation Overlay -->
+                    <div v-if="playerStore.currentSong?.id == song.id" class="absolute inset-0 bg-black/40 flex items-center justify-center gap-1 z-10">
+                      <div class="wave-bar h-2" :class="{'paused': !playerStore.isPlaying}"></div>
+                      <div class="wave-bar h-3" :class="{'paused': !playerStore.isPlaying}"></div>
+                      <div class="wave-bar h-1.5" :class="{'paused': !playerStore.isPlaying}"></div>
+                    </div>
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-gray-800 truncate">{{ song.title }}</span>
+                    <span class="text-xs text-gray-600 truncate md:hidden">{{ song.artist }}</span>
+                  </div>
+                </div>
+
+                <!-- Album -->
+                <div class="flex-1 min-w-0 truncate text-gray-600 pr-4 hidden md:block">{{ song.album }}</div>
+
+                <!-- Artist -->
+                <div class="flex-1 min-w-0 truncate text-gray-600 pr-4 hidden lg:block">{{ song.artist }}</div>
+
+                <!-- Play Count -->
+                <div class="w-32 text-center text-gray-600 font-mono flex-shrink-0">{{ song.stats.playCount.toLocaleString() }}</div>
+
+                <!-- Duration -->
+                <div class="w-20 text-center text-gray-600 font-mono text-xs flex-shrink-0">{{ formatDuration(song.duration) }}</div>
               </div>
             </div>
-            <div class="flex flex-col overflow-hidden">
-              <span class="font-medium text-gray-800 truncate">{{ song.title }}</span>
-              <span class="text-xs text-gray-600 truncate md:hidden">{{ song.artist }}</span>
-            </div>
           </div>
-
-          <!-- Album -->
-          <div class="flex-1 min-w-0 truncate text-gray-600 pr-4 hidden md:block">{{ song.album }}</div>
-
-          <!-- Artist -->
-          <div class="flex-1 min-w-0 truncate text-gray-600 pr-4 hidden lg:block">{{ song.artist }}</div>
-
-          <!-- Play Count -->
-          <div class="w-32 text-center text-gray-600 font-mono flex-shrink-0">{{ song.stats.playCount.toLocaleString() }}</div>
-
-          <!-- Duration -->
-          <div class="w-20 text-center text-gray-600 font-mono text-xs flex-shrink-0">{{ formatDuration(song.duration) }}</div>
         </div>
       </div>
     </div>
@@ -660,5 +735,23 @@ onUnmounted(() => {
 @keyframes wave {
   0%, 100% { transform: scaleY(0.5); }
   50% { transform: scaleY(1); }
+}
+
+/* Custom Scrollbar */
+:deep(.overflow-y-auto)::-webkit-scrollbar {
+  width: 12px;
+}
+
+:deep(.overflow-y-auto)::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+:deep(.overflow-y-auto)::-webkit-scrollbar-thumb {
+  background: #3b82f6; /* primary color */
+  border-radius: 6px;
+}
+
+:deep(.overflow-y-auto)::-webkit-scrollbar-thumb:hover {
+  background: #2563eb; /* blue-600 */
 }
 </style>
