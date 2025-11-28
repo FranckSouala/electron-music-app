@@ -9,7 +9,15 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlists'
 import { useStatsStore } from '@/stores/stats'
 import { useNavigationStore } from '@/stores/navigation'
-import { onMounted } from 'vue'
+import { onMounted, ref, provide } from 'vue'
+
+const isMobileSidebarOpen = ref(false)
+
+function toggleSidebar() {
+  isMobileSidebarOpen.value = !isMobileSidebarOpen.value
+}
+
+provide('toggleSidebar', toggleSidebar)
 
 const libraryStore = useLibraryStore()
 const playlistStore = usePlaylistStore()
@@ -36,9 +44,23 @@ onMounted(async () => {
     </div>
     
     <!-- Main content area: fills remaining space -->
-    <div class="flex flex-1 overflow-hidden min-h-0">
-      <Sidebar />
-      <main class="flex-1 relative bg-gray-50 min-w-0">
+    <div class="flex flex-1 overflow-hidden min-h-0 relative">
+      <!-- Mobile Sidebar Overlay -->
+      <div 
+        v-if="isMobileSidebarOpen" 
+        class="fixed inset-0 bg-black/50 z-40 lg:hidden"
+        @click="isMobileSidebarOpen = false"
+      ></div>
+
+      <!-- Sidebar: Fixed on mobile, relative on desktop -->
+      <div 
+        class="fixed top-0 bottom-0 left-0 z-50 lg:relative lg:z-0 lg:top-0 lg:bottom-0 transform transition-transform duration-300 ease-in-out lg:transform-none lg:h-full"
+        :class="isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+      >
+        <Sidebar @close="isMobileSidebarOpen = false" class="pb-24 lg:pb-0" />
+      </div>
+
+      <main class="flex-1 relative bg-gray-50 min-w-0 w-full">
         <SongList v-if="navigationStore.currentView === 'library'" />
         <PlaylistView v-else-if="navigationStore.currentView === 'playlist'" />
       </main>

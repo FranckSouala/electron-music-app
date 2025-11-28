@@ -1,7 +1,7 @@
 {
   "name": "low-music",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "A modern, lightweight music player",
   "type": "module",
   "main": "electron/main.js",
@@ -30,7 +30,7 @@
   },
   "build": {
     "appId": "com.electron.music",
-    "productName": "Music Player",
+    "productName": "Low Music",
     "directories": {
       "output": "dist-electron"
     },

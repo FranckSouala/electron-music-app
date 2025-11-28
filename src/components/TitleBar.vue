@@ -1,47 +1,39 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { inject } from 'vue'
 
-const appIcon = ref('')
-const systemTheme = ref('default') // 'gnome', 'kde', 'windows', 'mac', 'default'
-
-// Load app icon and system theme
-onMounted(async () => {
-  appIcon.value = '/icon.png'
-  if (window.electronAPI) {
-    try {
-      systemTheme.value = await window.electronAPI.getSystemTheme()
-      console.log('Detected system theme:', systemTheme.value)
-    } catch (e) {
-      console.error('Failed to get system theme:', e)
-    }
-  }
-})
+const { ipcRenderer } = window.electronAPI || {}
+const systemTheme = window.electronAPI ? window.electronAPI.getSystemTheme() : 'default'
+const toggleSidebar = inject('toggleSidebar')
 
 function minimizeWindow() {
-  if (window.electronAPI) {
-    window.electronAPI.windowMinimize()
-  }
+  if (window.electronAPI) window.electronAPI.windowMinimize()
 }
 
 function maximizeWindow() {
-  if (window.electronAPI) {
-    window.electronAPI.windowMaximize()
-  }
+  if (window.electronAPI) window.electronAPI.windowMaximize()
 }
 
 function closeWindow() {
-  if (window.electronAPI) {
-    window.electronAPI.windowClose()
-  }
+  if (window.electronAPI) window.electronAPI.windowClose()
 }
 </script>
 
 <template>
-  <div class="title-bar w-full bg-gray-50 border-b border-gray-200 h-10 flex items-center justify-between px-3 select-none flex-shrink-0" style="-webkit-app-region: drag">
-    <!-- App Icon & Name -->
+  <div class="h-10 bg-gray-200 flex items-center justify-between px-4 select-none draggable border-b border-gray-300">
+    <!-- Left: App Icon & Title -->
     <div class="flex items-center gap-2">
-      <img :src="appIcon" alt="App Icon" class="w-5 h-5" />
-      <span class="text-sm font-medium text-gray-700">Low Music</span>
+      <!-- Hamburger Menu (Mobile Only) -->
+      <button 
+        @click="toggleSidebar"
+        class="lg:hidden p-1 rounded hover:bg-gray-300 transition-colors no-drag"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" viewBox="0 0 24 24" fill="currentColor">
+          <path fill-rule="evenodd" d="M3 6.75A.75.75 0 013.75 6h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 6.75zM3 12a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 12zm0 5.25a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75a.75.75 0 01-.75-.75z" clip-rule="evenodd" />
+        </svg>
+      </button>
+
+      <img src="/icon.png" class="w-5 h-5" alt="App Icon" />
+      <span class="text-xs font-semibold text-gray-600">Low Music</span>
     </div>
     
     <!-- Window Controls -->
@@ -63,18 +55,18 @@ function closeWindow() {
       <!-- Linux / Chevron Style (User Preference) -->
       <template v-else-if="systemTheme === 'gnome' || systemTheme === 'kde' || systemTheme === 'default'">
         <button @click="minimizeWindow" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors mx-1" title="Minimize">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /> <!-- Chevron Down -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" />
           </svg>
         </button>
         <button @click="maximizeWindow" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors mx-1" title="Maximize">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /> <!-- Chevron Up -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M11.47 7.72a.75.75 0 011.06 0l7.5 7.5a.75.75 0 11-1.06 1.06L12 9.31l-6.97 6.97a.75.75 0 01-1.06-1.06l7.5-7.5z" clip-rule="evenodd" />
           </svg>
         </button>
         <button @click="closeWindow" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors group mx-1" title="Close">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /> <!-- X -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-700 group-hover:text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
           </svg>
         </button>
       </template>
@@ -86,8 +78,8 @@ function closeWindow() {
           class="w-10 h-10 flex items-center justify-center hover:bg-gray-200 transition-colors"
           title="Minimize"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-900" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M3.75 12a.75.75 0 01.75-.75h15a.75.75 0 010 1.5h-15a.75.75 0 01-.75-.75z" clip-rule="evenodd" />
           </svg>
         </button>
         
@@ -96,8 +88,8 @@ function closeWindow() {
           class="w-10 h-10 flex items-center justify-center hover:bg-gray-200 transition-colors"
           title="Maximize"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h16v16H4V4z" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-900" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M4.5 4.5a.75.75 0 00-.75.75v13.5a.75.75 0 00.75.75h13.5a.75.75 0 00.75-.75V5.25a.75.75 0 00-.75-.75H4.5zm1.5 1.5h10.5v10.5H6V6z" clip-rule="evenodd" />
           </svg>
         </button>
         
@@ -106,8 +98,8 @@ function closeWindow() {
           class="w-10 h-10 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors group"
           title="Close"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-900 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-900 group-hover:text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
           </svg>
         </button>
       </template>

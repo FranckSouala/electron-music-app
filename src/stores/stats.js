@@ -24,7 +24,8 @@ export const useStatsStore = defineStore('stats', () => {
       playStats.value[songId] = {
         playCount: 0,
         lastPlayed: null,
-        addedAt: Date.now()
+        addedAt: Date.now(),
+        liked: false
       }
     }
 
@@ -36,7 +37,7 @@ export const useStatsStore = defineStore('stats', () => {
   }
 
   function getSongStats(songId) {
-    return playStats.value[songId] || { playCount: 0, lastPlayed: null, addedAt: Date.now() }
+    return playStats.value[songId] || { playCount: 0, lastPlayed: null, addedAt: Date.now(), liked: false }
   }
 
   // Mark songs as added (on first scan)
@@ -49,7 +50,8 @@ export const useStatsStore = defineStore('stats', () => {
         playStats.value[songId] = {
           playCount: 0,
           lastPlayed: null,
-          addedAt: now
+          addedAt: now,
+          liked: false
         }
         hasChanges = true
       }
@@ -61,11 +63,26 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  function toggleLike(songId) {
+    if (!playStats.value[songId]) {
+      playStats.value[songId] = {
+        playCount: 0,
+        lastPlayed: null,
+        addedAt: Date.now(),
+        liked: false
+      }
+    }
+
+    playStats.value[songId].liked = !playStats.value[songId].liked
+    saveStats()
+  }
+
   return {
     playStats,
     initialize,
     trackPlay,
     getSongStats,
-    markSongsAsAdded
+    markSongsAsAdded,
+    toggleLike
   }
 })

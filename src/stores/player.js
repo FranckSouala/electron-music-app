@@ -16,6 +16,8 @@ export const usePlayerStore = defineStore('player', () => {
     const queue = ref([]) // Current playback queue
 
     const volume = ref(parseFloat(localStorage.getItem('player-volume')) || 1.0)
+    const isMuted = ref(false)
+    const previousVolume = ref(volume.value)
     audio.volume = volume.value
 
     // Sync volume/etc if needed
@@ -142,9 +144,26 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     function setVolume(val) {
+        if (val > 0 && isMuted.value) {
+            isMuted.value = false
+        }
         volume.value = val
         audio.volume = val
         localStorage.setItem('player-volume', val)
+    }
+
+    function toggleMute() {
+        if (isMuted.value) {
+            // Unmute
+            isMuted.value = false
+            volume.value = previousVolume.value
+            audio.volume = previousVolume.value
+        } else {
+            // Mute
+            previousVolume.value = volume.value
+            isMuted.value = true
+            audio.volume = 0
+        }
     }
 
     function toggleShuffle() {
@@ -164,6 +183,7 @@ export const usePlayerStore = defineStore('player', () => {
         loopMode,
         queue,
         volume,
+        isMuted,
         play,
         playContext,
         togglePlay,
@@ -171,6 +191,7 @@ export const usePlayerStore = defineStore('player', () => {
         prev,
         seek,
         setVolume,
+        toggleMute,
         toggleShuffle,
         toggleLoop
     }
